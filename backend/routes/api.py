@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from db.database import get_db
-from db.models import User, Category, Email, GmailAccount
+from backend.db.database import get_db
+from backend.db.models import User, Category, Email, GmailAccount
 from .schema import CategoryCreate
 
 router = APIRouter()

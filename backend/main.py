@@ -4,10 +4,10 @@ from sqlalchemy.orm import Session
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # Import modules
-from db.database import Base, engine, SessionLocal, get_db
-from routes.auth import router as auth_router
-from routes.api import router as api_router
-from email_processing import process_new_emails
+from backend.db.database import Base, engine, SessionLocal, get_db
+from backend.routes.auth import router as auth_router
+from backend.routes.api import router as api_router
+from backend.email_processing import process_new_emails
 
 # Create database tables
 Base.metadata.create_all(bind=engine)

@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session
 from datetime import datetime
-from db.models import GmailAccount, Category, Email
-from utils.gmail_utils import get_gmail_service, extract_email_content
-from utils.ai_utils import categorize_email, summarize_email
+from backend.db.models import GmailAccount, Category, Email
+from backend.utils.gmail_utils import get_gmail_service, extract_email_content
+from backend.utils.ai_utils import categorize_email, summarize_email
 
 
 def process_new_emails(db: Session):

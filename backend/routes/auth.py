@@ -3,9 +3,9 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-from db.database import get_db
-from db.models import User, GmailAccount
-from config import (
+from backend.db.database import get_db
+from backend.db.models import User, GmailAccount
+from backend.config import (
     GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET,
     REDIRECT_URI,

@@ -1,5 +1,5 @@
 import anthropic
-from config import ANTHROPIC_API_KEY
+from backend.config import ANTHROPIC_API_KEY
 
 anthropic_client = (
     anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
