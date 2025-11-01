@@ -8,7 +8,7 @@ load_dotenv()
 os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
 
 # Database
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./email_sorter.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
