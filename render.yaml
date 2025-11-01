@@ -3,7 +3,6 @@ services:
   - type: web
     name: email-sorter-backend
     env: python
-    region: oregon
     buildCommand: "pip install -r backend/requirements.txt"
     startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:
@@ -28,7 +27,6 @@ services:
   - type: web
     name: email-sorter-frontend
     env: static
-    region: oregon
     buildCommand: "cd frontend && npm install && npm run build"
     staticPublishPath: frontend/build
     envVars:
@@ -39,4 +37,3 @@ databases:
   - name: email-sorter-db
     databaseName: emailsorter
     user: emailsorter
-    region: oregon
