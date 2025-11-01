@@ -1,16 +1,19 @@
 import anthropic
+
 from backend.config import ANTHROPIC_API_KEY
+from backend.db.models import Category
 
 anthropic_client = (
     anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
 )
 
 
-def categorize_email(email_content: str, categories: list) -> int:
+def categorize_email(email_content: str, categories: list[Category]) -> int:
     """Use AI to categorize email, or keyword matching as fallback"""
     if not categories:
         return None
 
+    # If no Anthropic API key, use keyword-based categorization
     if not anthropic_client:
         return categorize_email_keywords(email_content, categories)
 
@@ -19,14 +22,14 @@ def categorize_email(email_content: str, categories: list) -> int:
             [f"- {cat.name}: {cat.description}" for cat in categories]
         )
 
-        prompt = f"""Given this email, categorize it into one of these categories:
+        prompt = f"""Given this email, categorize it into one of these categories. ONLY categorize if the email clearly matches a category description. If it doesn't clearly match any category, respond with "NONE".
 
 {category_text}
 
 Email:
 {email_content[:2000]}
 
-Respond with ONLY the category name, nothing else."""
+Respond with ONLY the category name if it matches, or "NONE" if it doesn't match any category."""
 
         message = anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
@@ -36,21 +39,25 @@ Respond with ONLY the category name, nothing else."""
 
         category_name = message.content[0].text.strip()
 
+        if category_name.upper() == "NONE":
+            return None
+
         for cat in categories:
             if cat.name.lower() in category_name.lower():
                 return cat.id
 
-        return categories[0].id if categories else None
+        return None
+
     except Exception as e:
         print(f"AI categorization failed, falling back to keywords: {e}")
         return categorize_email_keywords(email_content, categories)
 
 
 def categorize_email_keywords(email_content: str, categories: list) -> int:
-    """Simple keyword-based categorization"""
+    """Simple keyword-based categorization - returns None if no good match"""
     email_lower = email_content.lower()
-    scores = {}
 
+    scores = {}
     for cat in categories:
         score = 0
         description_words = cat.description.lower().split()
@@ -65,10 +72,12 @@ def categorize_email_keywords(email_content: str, categories: list) -> int:
 
         scores[cat.id] = score
 
-    if max(scores.values()) > 0:
+    MIN_SCORE = 2
+
+    if max(scores.values()) >= MIN_SCORE:
         return max(scores, key=scores.get)
     else:
-        return categories[0].id
+        return None
 
 
 def summarize_email(email_content: str) -> str:
@@ -108,3 +117,9 @@ def summarize_email_basic(email_content: str) -> str:
         for line in lines
         if line.strip() and not line.startswith("Subject:")
     ]
+    preview = " ".join(body_lines[:3])[:150]
+
+    if subject:
+        return f"{subject}. {preview}..." if preview else subject
+    else:
+        return f"{preview}..." if preview else "Email received"

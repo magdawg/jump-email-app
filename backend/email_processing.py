@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from datetime import datetime
+
 from backend.db.models import GmailAccount, Category, Email
 from backend.utils.gmail_utils import get_gmail_service, extract_email_content
 from backend.utils.ai_utils import categorize_email, summarize_email
@@ -22,7 +23,7 @@ def process_new_emails(db: Session):
             results = (
                 service.users()
                 .messages()
-                .list(userId="me", q="is:unread", maxResults=10)
+                .list(userId="me", q="is:unread in:inbox", maxResults=10)
                 .execute()
             )
 
@@ -36,7 +37,7 @@ def process_new_emails(db: Session):
                     db.query(Email).filter(Email.gmail_message_id == msg["id"]).first()
                 )
                 if existing:
-                    print(f"    ⏭️  Already processed, skipping")
+                    print(f"Already processed, skipping")
                     continue
 
                 message = (
@@ -57,26 +58,36 @@ def process_new_emails(db: Session):
                     elif header["name"] == "From":
                         sender = header["value"]
 
-                print(f"    Subject: {subject[:50]}...")
-                print(f"    From: {sender}")
+                print(f"Subject: {subject[:50]}...")
+                print(f"From: {sender}")
 
                 categories = (
                     db.query(Category).filter(Category.user_id == account.user_id).all()
                 )
 
+                # Categorize
                 if categories:
                     category_id = categorize_email(content, categories)
+
+                    if category_id is None:
+                        # No good match - SKIP this email entirely
+                        print(f"No matching category - skipping email")
+                        continue  # Skip to next email
+
                     category_name = next(
                         (c.name for c in categories if c.id == category_id), "Unknown"
                     )
-                    print(f"    ✅ Categorized as: {category_name}")
+                    print(f"Categorized as: {category_name}")
                 else:
-                    category_id = None
-                    print(f"    ⚠️  No categories available")
+                    print(f"No categories available - skipping")
+                    continue  # Skip if no categories defined
 
+                # Only process if we got here (email matched a category)
+                # Summarize
                 summary = summarize_email(content)
-                print(f"    ✅ Summary: {summary[:60]}...")
+                print(f"Summary: {summary[:60]}...")
 
+                # Save email
                 email = Email(
                     gmail_account_id=account.id,
                     category_id=category_id,
@@ -89,12 +100,13 @@ def process_new_emails(db: Session):
                 )
                 db.add(email)
 
+                # Archive in Gmail
                 service.users().messages().modify(
                     userId="me",
                     id=msg["id"],
                     body={"removeLabelIds": ["UNREAD", "INBOX"]},
                 ).execute()
-                print(f"    ✅ Archived in Gmail")
+                print(f"✅ Archived in Gmail")
 
             db.commit()
             print(f"\n✅ Successfully processed account: {account.email}")
