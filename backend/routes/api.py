@@ -36,6 +36,7 @@ from backend.utils.unsubscribe_utils import (
     visit_page,
     parse_list_unsubscribe,
 )
+from backend.utils.session_auth import get_current_user, verify_user_access
 
 from .schema import CategoryCreate
 
@@ -43,7 +44,14 @@ router = APIRouter()
 
 
 @router.get("/api/user/{user_id}")
-def get_user(user_id: int, db: Session = Depends(get_db)):
+def get_user(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get user information (requires authentication)"""
+    verify_user_access(current_user, user_id)
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -52,7 +60,14 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/api/user/{user_id}/gmail-accounts")
-def get_gmail_accounts(user_id: int, db: Session = Depends(get_db)):
+def get_gmail_accounts(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all Gmail accounts for a user (requires authentication)"""
+    verify_user_access(current_user, user_id)
+
     accounts = db.query(GmailAccount).filter(GmailAccount.user_id == user_id).all()
     return [
         {"id": a.id, "email": a.email, "is_primary": a.is_primary} for a in accounts
@@ -61,8 +76,14 @@ def get_gmail_accounts(user_id: int, db: Session = Depends(get_db)):
 
 @router.post("/api/user/{user_id}/categories")
 def create_category(
-    user_id: int, category: CategoryCreate, db: Session = Depends(get_db)
+    user_id: int,
+    category: CategoryCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
+    """Create a new category (requires authentication)"""
+    verify_user_access(current_user, user_id)
+
     new_category = Category(
         user_id=user_id, name=category.name, description=category.description
     )
@@ -77,7 +98,14 @@ def create_category(
 
 
 @router.get("/api/user/{user_id}/categories")
-def get_categories(user_id: int, db: Session = Depends(get_db)):
+def get_categories(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all categories for a user (requires authentication)"""
+    verify_user_access(current_user, user_id)
+
     categories = db.query(Category).filter(Category.user_id == user_id).all()
     result = []
     for cat in categories:
@@ -94,7 +122,18 @@ def get_categories(user_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/api/category/{category_id}/emails")
-def get_category_emails(category_id: int, db: Session = Depends(get_db)):
+def get_category_emails(
+    category_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all emails in a category (requires authentication)"""
+    category = db.query(Category).filter(Category.id == category_id).first()
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    verify_user_access(current_user, category.user_id)
+
     emails = (
         db.query(Email)
         .filter(Email.category_id == category_id)
@@ -115,10 +154,22 @@ def get_category_emails(category_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/api/email/{email_id}")
-def get_email(email_id: int, db: Session = Depends(get_db)):
+def get_email(
+    email_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get a specific email (requires authentication)"""
     email = db.query(Email).filter(Email.id == email_id).first()
     if not email:
         raise HTTPException(status_code=404, detail="Email not found")
+
+    # Verify the email belongs to the current user
+    # Email -> GmailAccount -> User
+    if email.gmail_account.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403, detail="You don't have permission to access this email"
+        )
 
     return {
         "id": email.id,
@@ -131,14 +182,37 @@ def get_email(email_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/api/emails/delete")
-def delete_emails(email_ids: list[int], db: Session = Depends(get_db)):
-    db.query(Email).filter(Email.id.in_(email_ids)).delete(synchronize_session=False)
+def delete_emails(
+    email_ids: list[int],
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete multiple emails (requires authentication)"""
+    emails = db.query(Email).filter(Email.id.in_(email_ids)).all()
+
+    for email in emails:
+        if email.gmail_account.user_id != current_user.id:
+            raise HTTPException(
+                status_code=403,
+                detail=f"You don't have permission to delete email {email.id}",
+            )
+
+    deleted_count = (
+        db.query(Email)
+        .filter(Email.id.in_(email_ids))
+        .delete(synchronize_session=False)
+    )
     db.commit()
-    return {"deleted": len(email_ids)}
+    return {"deleted": deleted_count}
 
 
 @router.post("/api/emails/unsubscribe")
-def unsubscribe_emails(email_ids: list[int], db: Session = Depends(get_db)):
+def unsubscribe_emails(
+    email_ids: list[int],
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Unsubscribe from multiple emails (requires authentication)"""
     results = []
 
     for email_id in email_ids:
@@ -146,6 +220,16 @@ def unsubscribe_emails(email_ids: list[int], db: Session = Depends(get_db)):
         if not email:
             results.append(
                 {"email_id": email_id, "success": False, "error": "Email not found"}
+            )
+            continue
+
+        if email.gmail_account.user_id != current_user.id:
+            results.append(
+                {
+                    "email_id": email_id,
+                    "success": False,
+                    "error": "You don't have permission to unsubscribe from this email",
+                }
             )
             continue
 
@@ -291,3 +375,16 @@ def unsubscribe_emails(email_ids: list[int], db: Session = Depends(get_db)):
             results.append({"email_id": email_id, "success": False, "error": str(e)})
 
     return {"results": results}
+
+
+@router.get("/api/me")
+def get_current_user_info(current_user: User = Depends(get_current_user)):
+    """
+    Get information about the currently authenticated user
+    """
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "name": current_user.name,
+        "created_at": current_user.created_at.isoformat(),
+    }

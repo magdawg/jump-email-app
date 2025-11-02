@@ -17,7 +17,7 @@
 #  * -----------------------------------------------------------------------------
 #  */
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from fastapi.responses import RedirectResponse
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
@@ -32,12 +32,26 @@ from backend.config import (
 )
 from backend.db.database import get_db
 from backend.db.models import GmailAccount, User
+from backend.utils.session_auth import (
+    create_session,
+    set_session_cookie,
+    clear_session_cookie,
+    delete_session,
+    get_current_user,
+)
 
 router = APIRouter()
 
 
 @router.get("/auth/login")
 def login(user_id: int = None):
+    print(
+        f"DEBUG: GOOGLE_CLIENT_ID = {GOOGLE_CLIENT_ID[:20]}..."
+        if GOOGLE_CLIENT_ID
+        else "DEBUG: GOOGLE_CLIENT_ID is None"
+    )
+    print(f"DEBUG: REDIRECT_URI = {REDIRECT_URI}")
+
     flow = Flow.from_client_config(
         {
             "web": {
@@ -62,7 +76,13 @@ def login(user_id: int = None):
 
 
 @router.get("/auth/callback")
-def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
+def auth_callback(
+    code: str, state: str, response: Response, db: Session = Depends(get_db)
+):
+    print(f"\n{'='*60}")
+    print(f"AUTH CALLBACK RECEIVED")
+    print(f"{'='*60}")
+
     try:
         flow = Flow.from_client_config(
             {
@@ -79,10 +99,12 @@ def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
 
         flow.fetch_token(code=code)
         credentials = flow.credentials
+        print(f"Token fetched successfully")
 
         # Get user info
         user_info_service = build("oauth2", "v2", credentials=credentials)
         user_info = user_info_service.userinfo().get().execute()
+        print(f"User info retrieved: {user_info.get('email')}")
 
         # Check if this is for an existing user
         if state and state != "new":
@@ -169,25 +191,54 @@ def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
             db.commit()
             print(f"Gmail account credentials updated for {user_info['email']}")
 
-        if not gmail_account:
-            is_primary = (
-                db.query(GmailAccount).filter(GmailAccount.user_id == user.id).count()
-                == 0
-            )
-            gmail_account = GmailAccount(
-                user_id=user.id,
-                email=user_info["email"],
-                credentials=credentials.to_json(),
-                is_primary=is_primary,
-            )
-            db.add(gmail_account)
-            db.commit()
-        else:
-            gmail_account.credentials = credentials.to_json()
-            db.commit()
+        # Create session and set cookie
+        session_token = create_session(user.id)
+        print(f"Session created for user {user.id}")
 
-        return RedirectResponse(url=f"{FRONTEND_URL}?user_id={user.id}")
+        # Create redirect response
+        redirect = RedirectResponse(url=f"{FRONTEND_URL}?user_id={user.id}")
+
+        # Set session cookie
+        set_session_cookie(redirect, session_token)
+        print(f"Session cookie set")
+
+        print(f"{'='*60}\n")
+        return redirect
 
     except Exception as e:
         print(f"ERROR: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/auth/logout")
+def logout(
+    response: Response,
+    session: str = Cookie(None),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Logout current user - clears session and cookie
+    """
+    if session:
+        delete_session(session)
+        print(f"✅ Session deleted for user {current_user.id}")
+
+    clear_session_cookie(response)
+    print(f"✅ Session cookie cleared")
+
+    return {"message": "Logged out successfully"}
+
+
+@router.get("/auth/check")
+def check_auth(current_user: User = Depends(get_current_user)):
+    """
+    Check if user is authenticated - returns user info if logged in
+    """
+    return {
+        "authenticated": True,
+        "user": {
+            "id": current_user.id,
+            "email": current_user.email,
+            "name": current_user.name,
+        },
+    }

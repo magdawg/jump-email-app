@@ -18,9 +18,13 @@
 // #  */
 
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import './App.css';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
+// Enable cookies to be sent with every request
+axios.defaults.withCredentials = true;
 
 function App() {
   const [userId, setUserId] = useState(null);
@@ -33,59 +37,85 @@ function App() {
   const [selectedEmailIds, setSelectedEmailIds] = useState([]);
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategory, setNewCategory] = useState({ name: '', description: '' });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user_id in URL
+    // Check if user just logged in (user_id in URL from OAuth redirect)
     const params = new URLSearchParams(window.location.search);
     const userIdParam = params.get('user_id');
+    
     if (userIdParam) {
-      setUserId(userIdParam);
+      // Store user ID and clean up URL
       localStorage.setItem('user_id', userIdParam);
       window.history.replaceState({}, document.title, "/");
+      setUserId(userIdParam);
+      checkAuth(userIdParam);
     } else {
+      // Check if already authenticated
       const storedUserId = localStorage.getItem('user_id');
       if (storedUserId) {
         setUserId(storedUserId);
+        checkAuth(storedUserId);
+      } else {
+        setLoading(false);
       }
     }
   }, []);
 
-  useEffect(() => {
-    if (userId) {
-      fetchUser();
-      fetchCategories();
-      fetchGmailAccounts();
-    }
-  }, [userId]);
-
-  const fetchUser = async () => {
+  const checkAuth = async (userIdToCheck) => {
     try {
-      const response = await fetch(`${API_URL}/api/user/${userId}`);
-      const data = await response.json();
-      setUser(data);
+      // Check if session is valid
+      const response = await axios.get(`${API_URL}/auth/check`);
+      setUser(response.data.user);
+      
+      // Fetch user data
+      await Promise.all([
+        fetchCategories(userIdToCheck),
+        fetchGmailAccounts(userIdToCheck)
+      ]);
+      
+      setLoading(false);
     } catch (error) {
-      console.error('Error fetching user:', error);
+      console.error('Not authenticated:', error);
+      // Clear stored user ID if not authenticated
+      localStorage.removeItem('user_id');
+      setUserId(null);
+      setUser(null);
+      setLoading(false);
     }
   };
 
-  const fetchCategories = async () => {
+  const fetchCategories = async (userIdToUse = userId) => {
     try {
-      const response = await fetch(`${API_URL}/api/user/${userId}/categories`);
-      const data = await response.json();
-      setCategories(data);
+      const response = await axios.get(`${API_URL}/api/user/${userIdToUse}/categories`);
+      setCategories(response.data || []);
     } catch (error) {
       console.error('Error fetching categories:', error);
+      setCategories([]);
+      if (error.response?.status === 401) {
+        handleAuthError();
+      }
     }
   };
 
-  const fetchGmailAccounts = async () => {
+  const fetchGmailAccounts = async (userIdToUse = userId) => {
     try {
-      const response = await fetch(`${API_URL}/api/user/${userId}/gmail-accounts`);
-      const data = await response.json();
-      setGmailAccounts(data);
+      const response = await axios.get(`${API_URL}/api/user/${userIdToUse}/gmail-accounts`);
+      setGmailAccounts(response.data || []);
     } catch (error) {
       console.error('Error fetching Gmail accounts:', error);
+      setGmailAccounts([]);
+      if (error.response?.status === 401) {
+        handleAuthError();
+      }
     }
+  };
+
+  const handleAuthError = () => {
+    localStorage.removeItem('user_id');
+    setUserId(null);
+    setUser(null);
+    alert('Your session has expired. Please log in again.');
   };
 
   const handleLogin = async () => {
@@ -94,33 +124,43 @@ function App() {
     
     try {
       console.log('🔍 Fetching auth URL...');
-      const response = await fetch(`${API_URL}/auth/login`);
-      console.log('🔍 Response:', response);
-      
-      const data = await response.json();
-      console.log('🔍 Data received:', data);
-      console.log('🔍 Auth URL:', data.auth_url);
+      const response = await axios.get(`${API_URL}/auth/login`);
+      console.log('🔍 Auth URL:', response.data.auth_url);
       
       console.log('🔍 Redirecting to Google...');
-      window.location.href = data.auth_url;
+      window.location.href = response.data.auth_url;
     } catch (error) {
       console.error('❌ Error logging in:', error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await axios.post(`${API_URL}/auth/logout`);
+      localStorage.removeItem('user_id');
+      setUserId(null);
+      setUser(null);
+      setCategories([]);
+      setGmailAccounts([]);
+      setSelectedCategory(null);
+      setSelectedEmail(null);
+    } catch (error) {
+      console.error('Error logging out:', error);
     }
   };
 
   const handleAddCategory = async (e) => {
     e.preventDefault();
     try {
-      const response = await fetch(`${API_URL}/api/user/${userId}/categories`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newCategory)
-      });
+      await axios.post(`${API_URL}/api/user/${userId}/categories`, newCategory);
       await fetchCategories();
       setNewCategory({ name: '', description: '' });
       setShowAddCategory(false);
     } catch (error) {
       console.error('Error adding category:', error);
+      if (error.response?.status === 401) {
+        handleAuthError();
+      }
     }
   };
 
@@ -129,21 +169,26 @@ function App() {
     setSelectedEmail(null);
     setSelectedEmailIds([]);
     try {
-      const response = await fetch(`${API_URL}/api/category/${category.id}/emails`);
-      const data = await response.json();
-      setCategoryEmails(data);
+      const response = await axios.get(`${API_URL}/api/category/${category.id}/emails`);
+      setCategoryEmails(response.data || []);
     } catch (error) {
       console.error('Error fetching emails:', error);
+      setCategoryEmails([]);
+      if (error.response?.status === 401) {
+        handleAuthError();
+      }
     }
   };
 
   const handleSelectEmail = async (email) => {
     try {
-      const response = await fetch(`${API_URL}/api/email/${email.id}`);
-      const data = await response.json();
-      setSelectedEmail(data);
+      const response = await axios.get(`${API_URL}/api/email/${email.id}`);
+      setSelectedEmail(response.data);
     } catch (error) {
       console.error('Error fetching email details:', error);
+      if (error.response?.status === 401) {
+        handleAuthError();
+      }
     }
   };
 
@@ -165,17 +210,22 @@ function App() {
 
   const handleDeleteSelected = async () => {
     if (selectedEmailIds.length === 0) return;
+    
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${selectedEmailIds.length} email(s)?`
+    );
+    if (!confirmed) return;
+
     try {
-      await fetch(`${API_URL}/api/emails/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(selectedEmailIds)
-      });
+      await axios.post(`${API_URL}/api/emails/delete`, selectedEmailIds);
       setCategoryEmails(prev => prev.filter(e => !selectedEmailIds.includes(e.id)));
       setSelectedEmailIds([]);
       await fetchCategories();
     } catch (error) {
       console.error('Error deleting emails:', error);
+      if (error.response?.status === 401) {
+        handleAuthError();
+      }
     }
   };
 
@@ -188,20 +238,12 @@ function App() {
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`${API_URL}/api/emails/unsubscribe`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(selectedEmailIds),
-      });
+      const response = await axios.post(`${API_URL}/api/emails/unsubscribe`, selectedEmailIds);
 
-      const data = await response.json();
-
-      // Count successes and failures
-      const results = data.results || [];
+      const results = response.data.results || [];
       const successCount = results.filter(r => r.success === true).length;
       const failureCount = results.filter(r => r.success === false).length;
 
-      // Determine overall outcome
       if (successCount === selectedEmailIds.length) {
         alert('All selected emails were successfully unsubscribed.');
       } else if (successCount > 0) {
@@ -210,17 +252,19 @@ function App() {
         alert('Failed to unsubscribe any emails. Check console for details.');
       }
 
-      console.log('Unsubscribe results:', data);
+      console.log('Unsubscribe results:', response.data);
     } catch (error) {
       console.error('Error unsubscribing:', error);
       alert('An error occurred while attempting to unsubscribe.');
+      if (error.response?.status === 401) {
+        handleAuthError();
+      }
     }
   };
-  
 
   const handleProcessEmails = async () => {
     try {
-      await fetch(`${API_URL}/api/process-emails`, { method: 'POST' });
+      await axios.post(`${API_URL}/api/process-emails`);
       alert('Email processing started. This may take a few minutes.');
       setTimeout(() => {
         fetchCategories();
@@ -230,20 +274,35 @@ function App() {
       }, 5000);
     } catch (error) {
       console.error('Error processing emails:', error);
+      if (error.response?.status === 401) {
+        handleAuthError();
+      }
     }
   };
 
   const handleConnectAnotherAccount = async () => {
     try {
-      const response = await fetch(`${API_URL}/auth/login?user_id=${userId}`);
-      const data = await response.json();
-      window.location.href = data.auth_url;
+      const response = await axios.get(`${API_URL}/auth/login?user_id=${userId}`);
+      window.location.href = response.data.auth_url;
     } catch (error) {
-      console.error('Error logging in:', error);
+      console.error('Error connecting account:', error);
     }
   };
 
-  if (!userId) {
+  // Loading state
+  if (loading) {
+    return (
+      <div className="App">
+        <div className="login-container">
+          <h1>AI Smart Email Sorter</h1>
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Login screen
+  if (!userId || !user) {
     return (
       <div className="App">
         <div className="login-container">
@@ -257,6 +316,7 @@ function App() {
     );
   }
 
+  // Email detail view
   if (selectedEmail) {
     return (
       <div className="App">
@@ -284,6 +344,7 @@ function App() {
     );
   }
 
+  // Category view
   if (selectedCategory) {
     return (
       <div className="App">
@@ -354,6 +415,7 @@ function App() {
     );
   }
 
+  // Dashboard view
   return (
     <div className="App">
       <div className="dashboard">
@@ -361,6 +423,9 @@ function App() {
           <h1>AI Smart Email Sorter</h1>
           <div className="user-info">
             <span>Welcome, {user?.name || user?.email}</span>
+            <button onClick={handleLogout} className="btn-secondary" style={{ marginLeft: '10px' }}>
+              Logout
+            </button>
           </div>
         </header>
 
@@ -368,12 +433,16 @@ function App() {
           <section className="section">
             <h2>Gmail Accounts</h2>
             <div className="gmail-accounts">
-              {gmailAccounts.map(account => (
-                <div key={account.id} className="gmail-account">
-                  <span>{account.email}</span>
-                  {account.is_primary && <span className="badge">Primary</span>}
-                </div>
-              ))}
+              {gmailAccounts.length === 0 ? (
+                <p className="empty-state">No Gmail accounts connected yet.</p>
+              ) : (
+                gmailAccounts.map(account => (
+                  <div key={account.id} className="gmail-account">
+                    <span>{account.email}</span>
+                    {account.is_primary && <span className="badge">Primary</span>}
+                  </div>
+                ))
+              )}
               <button onClick={handleConnectAnotherAccount} className="btn-secondary">
                 + Connect Another Account
               </button>
