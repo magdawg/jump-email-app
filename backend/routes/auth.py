@@ -38,13 +38,6 @@ router = APIRouter()
 
 @router.get("/auth/login")
 def login(user_id: int = None):
-    print(
-        f"DEBUG: GOOGLE_CLIENT_ID = {GOOGLE_CLIENT_ID[:20]}..."
-        if GOOGLE_CLIENT_ID
-        else "DEBUG: GOOGLE_CLIENT_ID is None"
-    )
-    print(f"DEBUG: REDIRECT_URI = {REDIRECT_URI}")
-
     flow = Flow.from_client_config(
         {
             "web": {
@@ -70,10 +63,6 @@ def login(user_id: int = None):
 
 @router.get("/auth/callback")
 def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
-    print(f"\n{'='*60}")
-    print(f"AUTH CALLBACK RECEIVED")
-    print(f"{'='*60}")
-
     try:
         flow = Flow.from_client_config(
             {
@@ -90,12 +79,10 @@ def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
 
         flow.fetch_token(code=code)
         credentials = flow.credentials
-        print(f"✅ Token fetched successfully")
 
         # Get user info
         user_info_service = build("oauth2", "v2", credentials=credentials)
         user_info = user_info_service.userinfo().get().execute()
-        print(f"✅ User info retrieved: {user_info.get('email')}")
 
         # Check if this is for an existing user
         if state and state != "new":
@@ -153,7 +140,7 @@ def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
             if existing_account and existing_account.user_id != user.id:
                 # Move account to current user or skip
                 print(
-                    f"⚠️  Account {user_info['email']} already connected to different user"
+                    f"Account {user_info['email']} already connected to different user"
                 )
                 # For now, update the credentials anyway
                 existing_account.credentials = credentials.to_json()
@@ -175,12 +162,12 @@ def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
                 )
                 db.add(gmail_account)
                 db.commit()
-                print(f"✅ Gmail account {user_info['email']} added to user {user.id}")
+                print(f"Gmail account {user_info['email']} added to user {user.id}")
         else:
             # Update existing account credentials
             gmail_account.credentials = credentials.to_json()
             db.commit()
-            print(f"✅ Gmail account credentials updated for {user_info['email']}")
+            print(f"Gmail account credentials updated for {user_info['email']}")
 
         if not gmail_account:
             is_primary = (
@@ -199,7 +186,6 @@ def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
             gmail_account.credentials = credentials.to_json()
             db.commit()
 
-        print(f"{'='*60}\n")
         return RedirectResponse(url=f"{FRONTEND_URL}?user_id={user.id}")
 
     except Exception as e:

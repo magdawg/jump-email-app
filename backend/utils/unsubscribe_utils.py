@@ -70,7 +70,8 @@ def parse_unsubscribe_forms(html_text, base_url):
                 value = input_tag.get("value", "")
                 input_type = input_tag.get("type", "").lower()
                 if input_type in ["checkbox", "radio"]:
-                    if input_tag.get("checked"):
+                    # Use has_attr() to properly detect boolean attributes
+                    if input_tag.has_attr("checked"):
                         form_data[name] = value
                 else:
                     form_data[name] = value
