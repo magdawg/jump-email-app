@@ -1,10 +1,28 @@
+# /*
+#  * -----------------------------------------------------------------------------
+#  *  Copyright (c) 2025 Magda Kowalska. All rights reserved.
+#  *
+#  *  This software and its source code are the intellectual property of
+#  *  Magda Kowalska. Unauthorized copying, reproduction, or use of this
+#  *  software, in whole or in part, is strictly prohibited without express
+#  *  written permission.
+#  *
+#  *  This software is protected under the Berne Convention for the Protection
+#  *  of Literary and Artistic Works, EU copyright law, and international
+#  *  copyright treaties.
+#  *
+#  *  Author: Magda Kowalska
+#  *  Created: 2025-11-02
+#  *  Last Modified: 2025-11-02
+#  * -----------------------------------------------------------------------------
+#  */
+
 import base64
 import json
-import re
 from typing import Optional
 from urllib.parse import unquote
-from bs4 import BeautifulSoup
 
+from bs4 import BeautifulSoup
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
@@ -23,14 +41,12 @@ def extract_email_content(message):
 
     payload = message["payload"]
 
-    # Get subject
     subject = ""
     for header in payload.get("headers", []):
         if header["name"] == "Subject":
             subject = header["value"]
             break
 
-    # Get body
     body = ""
     if "parts" in payload:
         for part in payload["parts"]:
@@ -232,7 +248,6 @@ def extract_email_html(message: dict) -> str:
         except Exception:
             return ""
 
-    # Check if message has parts (multipart)
     if "parts" in payload:
         for part in payload["parts"]:
             mime_type = part.get("mimeType", "")
@@ -249,7 +264,6 @@ def extract_email_html(message: dict) -> str:
                         if "data" in subpart.get("body", {}):
                             return decode_part(subpart["body"]["data"])
 
-    # If no parts, try direct body
     elif "body" in payload and "data" in payload["body"]:
         return decode_part(payload["body"]["data"])
 

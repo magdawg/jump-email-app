@@ -1,3 +1,22 @@
+# /*
+#  * -----------------------------------------------------------------------------
+#  *  Copyright (c) 2025 Magda Kowalska. All rights reserved.
+#  *
+#  *  This software and its source code are the intellectual property of
+#  *  Magda Kowalska. Unauthorized copying, reproduction, or use of this
+#  *  software, in whole or in part, is strictly prohibited without express
+#  *  written permission.
+#  *
+#  *  This software is protected under the Berne Convention for the Protection
+#  *  of Literary and Artistic Works, EU copyright law, and international
+#  *  copyright treaties.
+#  *
+#  *  Author: Magda Kowalska
+#  *  Created: 2025-11-02
+#  *  Last Modified: 2025-11-02
+#  * -----------------------------------------------------------------------------
+#  */
+
 import requests
 from bs4 import BeautifulSoup
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,9 +25,9 @@ from sqlalchemy.orm import Session
 from backend.db.database import get_db
 from backend.db.models import Category, Email, GmailAccount, User
 from backend.utils.gmail_utils import (
+    extract_email_html,
     find_unsubscribe_link,
     get_gmail_service,
-    extract_email_html,
 )
 
 from .schema import CategoryCreate
