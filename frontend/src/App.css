@@ -154,6 +154,15 @@ body {
   margin-bottom: 12px;
 }
 
+.category-card.uncategorized {
+  background: #fff3cd;
+  border-left: 4px solid #ff9800;
+}
+
+.category-card.uncategorized h3 {
+  color: #f57c00;
+}
+
 .email-count {
   display: inline-block;
   background: #e0e0e0;

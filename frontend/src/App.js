@@ -386,7 +386,7 @@ function App() {
                 categories.map(category => (
                   <div
                     key={category.id}
-                    className="category-card"
+                    className={`category-card ${category.name.toLowerCase() === 'uncategorized' ? 'uncategorized' : ''}`}
                     onClick={() => handleSelectCategory(category)}
                   >
                     <h3>{category.name}</h3>

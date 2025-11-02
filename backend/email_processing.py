@@ -6,6 +6,28 @@ from backend.utils.gmail_utils import get_gmail_service, extract_email_content
 from backend.utils.ai_utils import categorize_email, summarize_email
 
 
+def get_or_create_uncategorized_category(user_id: int, db: Session) -> int:
+    """Get or create the Uncategorized category for a user"""
+    uncategorized = (
+        db.query(Category)
+        .filter(Category.user_id == user_id, Category.name == "Uncategorized")
+        .first()
+    )
+
+    if not uncategorized:
+        uncategorized = Category(
+            user_id=user_id,
+            name="Uncategorized",
+            description="Emails that don't match any specific category",
+        )
+        db.add(uncategorized)
+        db.commit()
+        db.refresh(uncategorized)
+        print(f"Created 'Uncategorized' category for user {user_id}")
+
+    return uncategorized.id
+
+
 def process_new_emails(db: Session):
     """Background job to process new emails"""
     print(f"\n{'='*60}")
@@ -64,30 +86,31 @@ def process_new_emails(db: Session):
                 categories = (
                     db.query(Category).filter(Category.user_id == account.user_id).all()
                 )
+                print(f"Available categories: {len(categories)}")
 
-                # Categorize
                 if categories:
                     category_id = categorize_email(content, categories)
 
                     if category_id is None:
-                        # No good match - SKIP this email entirely
-                        print(f"No matching category - skipping email")
-                        continue  # Skip to next email
-
-                    category_name = next(
-                        (c.name for c in categories if c.id == category_id), "Unknown"
-                    )
-                    print(f"Categorized as: {category_name}")
+                        category_id = get_or_create_uncategorized_category(
+                            account.user_id, db
+                        )
+                        print(f"No match - categorized as: Uncategorized")
+                    else:
+                        category_name = next(
+                            (c.name for c in categories if c.id == category_id),
+                            "Unknown",
+                        )
+                        print(f"Categorized as: {category_name}")
                 else:
-                    print(f"No categories available - skipping")
-                    continue  # Skip if no categories defined
+                    category_id = get_or_create_uncategorized_category(
+                        account.user_id, db
+                    )
+                    print(f"No categories - using: Uncategorized")
 
-                # Only process if we got here (email matched a category)
-                # Summarize
                 summary = summarize_email(content)
                 print(f"Summary: {summary[:60]}...")
 
-                # Save email
                 email = Email(
                     gmail_account_id=account.id,
                     category_id=category_id,
@@ -100,13 +123,12 @@ def process_new_emails(db: Session):
                 )
                 db.add(email)
 
-                # Archive in Gmail
                 service.users().messages().modify(
                     userId="me",
                     id=msg["id"],
                     body={"removeLabelIds": ["UNREAD", "INBOX"]},
                 ).execute()
-                print(f"✅ Archived in Gmail")
+                print(f"Archived in Gmail")
 
             db.commit()
             print(f"\n✅ Successfully processed account: {account.email}")
