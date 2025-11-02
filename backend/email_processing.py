@@ -1,9 +1,10 @@
-from sqlalchemy.orm import Session
 from datetime import datetime
 
-from backend.db.models import GmailAccount, Category, Email
-from backend.utils.gmail_utils import get_gmail_service, extract_email_content
+from sqlalchemy.orm import Session
+
+from backend.db.models import Category, Email, GmailAccount
 from backend.utils.ai_utils import categorize_email, summarize_email
+from backend.utils.gmail_utils import extract_email_content, get_gmail_service
 
 
 def get_or_create_uncategorized_category(user_id: int, db: Session) -> int:

@@ -1,17 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
-from sqlalchemy.orm import Session
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+from sqlalchemy.orm import Session
+
+from backend.config import (FRONTEND_URL, GOOGLE_CLIENT_ID,
+                            GOOGLE_CLIENT_SECRET, REDIRECT_URI, SCOPES)
 from backend.db.database import get_db
-from backend.db.models import User, GmailAccount
-from backend.config import (
-    GOOGLE_CLIENT_ID,
-    GOOGLE_CLIENT_SECRET,
-    REDIRECT_URI,
-    SCOPES,
-    FRONTEND_URL,
-)
+from backend.db.models import GmailAccount, User
 
 router = APIRouter()
 

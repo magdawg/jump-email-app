@@ -1,9 +1,10 @@
+import base64
+import json
+import re
+from typing import Optional
+
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-import json
-import base64
-import re
-from typing import List, Optional
 
 
 def get_gmail_service(credentials_json):

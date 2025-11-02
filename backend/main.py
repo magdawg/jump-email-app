@@ -1,13 +1,13 @@
-from fastapi import FastAPI, BackgroundTasks, Depends
+from apscheduler.schedulers.background import BackgroundScheduler
+from fastapi import BackgroundTasks, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from apscheduler.schedulers.background import BackgroundScheduler
 
 # Import modules
-from backend.db.database import Base, engine, SessionLocal, get_db
-from backend.routes.auth import router as auth_router
-from backend.routes.api import router as api_router
+from backend.db.database import Base, SessionLocal, engine, get_db
 from backend.email_processing import process_new_emails
+from backend.routes.api import router as api_router
+from backend.routes.auth import router as auth_router
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -52,8 +52,9 @@ scheduler.add_job(
 scheduler.start()
 
 if __name__ == "__main__":
-    import uvicorn
     import os
+
+    import uvicorn
 
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
