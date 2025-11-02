@@ -27,6 +27,8 @@ from backend.email_processing import process_new_emails
 from backend.routes.api import router as api_router
 from backend.routes.auth import router as auth_router
 
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
@@ -36,7 +38,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "https://smartsort-0yhb.onrender.com/",
+        FRONTEND_URL,
     ],
     allow_credentials=True,
     allow_methods=["*"],
