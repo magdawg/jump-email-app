@@ -152,10 +152,10 @@ def process_new_emails(db: Session):
                 print(f"Archived in Gmail")
 
             db.commit()
-            print(f"\n✅ Successfully processed account: {account.email}")
+            print(f"\n Successfully processed account: {account.email}")
 
         except Exception as e:
-            print(f"\n❌ Error processing emails for {account.email}: {e}")
+            print(f"\n Error processing emails for {account.email}: {e}")
             db.rollback()
 
     print(f"\n{'='*60}")

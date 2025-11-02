@@ -32,7 +32,6 @@ def categorize_email(email_content: str, categories: list[Category]) -> int:
     if not categories:
         return None
 
-    # If no Anthropic API key, use keyword-based categorization
     if not anthropic_client:
         return categorize_email_keywords(email_content, categories)
 

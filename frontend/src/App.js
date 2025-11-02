@@ -181,22 +181,42 @@ function App() {
 
   const handleUnsubscribeSelected = async () => {
     if (selectedEmailIds.length === 0) return;
-    const confirmed = window.confirm('This will attempt to unsubscribe from the selected emails. Continue?');
+
+    const confirmed = window.confirm(
+      'This will attempt to unsubscribe from the selected emails. Continue?'
+    );
     if (!confirmed) return;
-    
+
     try {
       const response = await fetch(`${API_URL}/api/emails/unsubscribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(selectedEmailIds)
+        body: JSON.stringify(selectedEmailIds),
       });
+
       const data = await response.json();
-      alert(`Unsubscribe completed. Check console for details.`);
+
+      // Count successes and failures
+      const results = data.results || [];
+      const successCount = results.filter(r => r.success === true).length;
+      const failureCount = results.filter(r => r.success === false).length;
+
+      // Determine overall outcome
+      if (successCount === selectedEmailIds.length) {
+        alert('All selected emails were successfully unsubscribed.');
+      } else if (successCount > 0) {
+        alert(`Partial success: ${successCount} unsubscribed, ${failureCount} failed. Check console for details.`);
+      } else {
+        alert('Failed to unsubscribe any emails. Check console for details.');
+      }
+
       console.log('Unsubscribe results:', data);
     } catch (error) {
       console.error('Error unsubscribing:', error);
+      alert('An error occurred while attempting to unsubscribe.');
     }
   };
+  
 
   const handleProcessEmails = async () => {
     try {
