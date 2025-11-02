@@ -17,10 +17,9 @@
 #  * -----------------------------------------------------------------------------
 #  */
 
-import requests
-from bs4 import BeautifulSoup
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+import traceback
 
 from backend.db.database import get_db
 from backend.db.models import Category, Email, GmailAccount, User
@@ -28,6 +27,14 @@ from backend.utils.gmail_utils import (
     extract_email_html,
     find_unsubscribe_link,
     get_gmail_service,
+)
+from backend.utils.unsubscribe_utils import (
+    parse_unsubscribe_forms,
+    submit_form,
+    click_links,
+    create_session,
+    visit_page,
+    parse_list_unsubscribe,
 )
 
 from .schema import CategoryCreate
@@ -132,18 +139,19 @@ def delete_emails(email_ids: list[int], db: Session = Depends(get_db)):
 
 @router.post("/api/emails/unsubscribe")
 def unsubscribe_emails(email_ids: list[int], db: Session = Depends(get_db)):
-    """Unsubscribe by clicking on the link and follow the forms if any"""
-
     results = []
+
     for email_id in email_ids:
         email = db.query(Email).filter(Email.id == email_id).first()
         if not email:
+            results.append(
+                {"email_id": email_id, "success": False, "error": "Email not found"}
+            )
             continue
 
-        gmail_account = email.gmail_account
-        service = get_gmail_service(gmail_account.credentials)
-
         try:
+            gmail_account = email.gmail_account
+            service = get_gmail_service(gmail_account.credentials)
             message = (
                 service.users()
                 .messages()
@@ -151,188 +159,135 @@ def unsubscribe_emails(email_ids: list[int], db: Session = Depends(get_db)):
                 .execute()
             )
             headers = message["payload"].get("headers", [])
-
             html_content = extract_email_html(message)
-
             content_to_search = html_content if html_content else email.body
 
-            unsubscribe_link = find_unsubscribe_link(content_to_search, headers)
-
-            if unsubscribe_link:
-                if unsubscribe_link.startswith("mailto:"):
+            # --- Step 1: Try List-Unsubscribe header ---
+            list_unsub_url = parse_list_unsubscribe(headers)
+            if list_unsub_url:
+                if list_unsub_url.startswith("mailto:"):
                     results.append(
                         {
                             "email_id": email_id,
                             "success": False,
-                            "error": "Requires email (not automated)",
+                            "error": "List-Unsubscribe requires sending email (cannot automate)",
                         }
                     )
                     continue
+                else:
+                    session = create_session()
+                    page_text, final_url = visit_page(session, list_unsub_url)
+                    if page_text and any(
+                        word in page_text.lower()
+                        for word in ["unsubscribed", "removed", "success"]
+                    ):
+                        results.append(
+                            {
+                                "email_id": email_id,
+                                "success": True,
+                                "message": "Unsubscribed via List-Unsubscribe header",
+                            }
+                        )
+                        continue
+                    else:
+                        results.append(
+                            {
+                                "email_id": email_id,
+                                "success": "partial",
+                                "message": "List-Unsubscribe URL visited but JS or login may be required",
+                                "url": list_unsub_url,
+                            }
+                        )
+                        continue
 
-                print(f"\n Visiting: {unsubscribe_link}")
-
-                # Step 1: Visit the unsubscribe page
-                session = requests.Session()
-                session.headers.update(
+            # --- Step 2: Fallback to link in email body ---
+            unsubscribe_link = find_unsubscribe_link(content_to_search, headers)
+            if not unsubscribe_link:
+                results.append(
                     {
-                        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+                        "email_id": email_id,
+                        "success": False,
+                        "error": "No unsubscribe link found",
                     }
                 )
+                continue
 
-                response = session.get(unsubscribe_link, timeout=10)
+            if unsubscribe_link.startswith("mailto:"):
+                results.append(
+                    {
+                        "email_id": email_id,
+                        "success": False,
+                        "error": "Requires sending email (cannot automate)",
+                    }
+                )
+                continue
 
-                if response.status_code != 200:
-                    results.append(
-                        {
-                            "email_id": email_id,
-                            "success": False,
-                            "error": f"HTTP {response.status_code}",
-                        }
-                    )
-                    continue
+            session = create_session()
+            page_text, final_url = visit_page(session, unsubscribe_link)
+            if not page_text:
+                results.append(
+                    {
+                        "email_id": email_id,
+                        "success": False,
+                        "error": "Failed to visit page",
+                    }
+                )
+                continue
 
-                # Step 2: Parse the page
-                soup = BeautifulSoup(response.text, "html.parser")
-                page_text = soup.get_text().lower()
+            # Check if already unsubscribed
+            if any(
+                word in page_text.lower()
+                for word in ["unsubscribed", "removed", "no longer receive"]
+            ):
+                results.append(
+                    {
+                        "email_id": email_id,
+                        "success": True,
+                        "message": "Already unsubscribed or one-click successful",
+                    }
+                )
+                continue
 
-                # Check if already unsubscribed
-                if any(
-                    word in page_text
-                    for word in ["unsubscribed", "removed", "no longer receive"]
-                ):
-                    print(f"Already unsubscribed!")
+            # Try forms first
+            forms = parse_unsubscribe_forms(page_text, final_url)
+            unsub_done = False
+            for form in forms:
+                if submit_form(session, form):
                     results.append(
                         {
                             "email_id": email_id,
                             "success": True,
-                            "message": "Unsubscribed (one-click or already done)",
+                            "message": "Unsubscribed via form submission",
                         }
                     )
-                    continue
+                    unsub_done = True
+                    break
 
-                # Step 3: Look for unsubscribe buttons/forms
-                unsubscribe_found = False
+            # Try links if forms failed
+            if not unsub_done and click_links(session, page_text, final_url):
+                results.append(
+                    {
+                        "email_id": email_id,
+                        "success": True,
+                        "message": "Unsubscribed via confirmation link",
+                    }
+                )
+                unsub_done = True
 
-                # Look for forms
-                forms = soup.find_all("form")
-                for form in forms:
-                    form_text = form.get_text().lower()
-                    if (
-                        "unsubscribe" in form_text
-                        or "opt out" in form_text
-                        or "remove" in form_text
-                    ):
-                        # Found unsubscribe form!
-                        action = form.get("action", "")
-                        method = form.get("method", "get").lower()
-
-                        # Build the URL
-                        if action:
-                            from urllib.parse import urljoin
-
-                            submit_url = urljoin(response.url, action)
-                        else:
-                            submit_url = response.url
-
-                        # Get form data
-                        form_data = {}
-                        for input_tag in form.find_all("input"):
-                            name = input_tag.get("name")
-                            value = input_tag.get("value", "")
-                            input_type = input_tag.get("type", "").lower()
-
-                            if name:
-                                # For checkboxes/radio, only include if checked
-                                if input_type in ["checkbox", "radio"]:
-                                    if input_tag.get("checked"):
-                                        form_data[name] = value
-                                else:
-                                    form_data[name] = value
-
-                        print(f"Submitting form to: {submit_url}")
-
-                        # Submit the form
-                        if method == "post":
-                            form_response = session.post(
-                                submit_url, data=form_data, timeout=10
-                            )
-                        else:
-                            form_response = session.get(
-                                submit_url, params=form_data, timeout=10
-                            )
-
-                        if form_response.status_code == 200:
-                            result_text = form_response.text.lower()
-                            if any(
-                                word in result_text
-                                for word in [
-                                    "unsubscribed",
-                                    "removed",
-                                    "success",
-                                    "confirmed",
-                                ]
-                            ):
-                                print(f"Form submitted successfully!")
-                                results.append(
-                                    {
-                                        "email_id": email_id,
-                                        "success": True,
-                                        "message": "Unsubscribed via form submission",
-                                    }
-                                )
-                                unsubscribe_found = True
-                                break
-                        else:
-                            print(
-                                f"Form submission got status {form_response.status_code}"
-                            )
-
-                # Look for unsubscribe links/buttons if no form found
-                if not unsubscribe_found:
-                    links = soup.find_all("a", href=True)
-                    for link in links:
-                        link_text = link.get_text().lower()
-                        href = link.get("href", "")
-
-                        if any(
-                            word in link_text
-                            for word in ["unsubscribe", "opt out", "remove", "confirm"]
-                        ):
-                            # Click this link
-                            click_url = urljoin(response.url, href)
-                            print(f"Clicking link: {click_url}")
-
-                            click_response = session.get(click_url, timeout=10)
-
-                            if click_response.status_code == 200:
-                                result_text = click_response.text.lower()
-                                if any(
-                                    word in result_text
-                                    for word in ["unsubscribed", "removed", "success"]
-                                ):
-                                    print(f"Successfully unsubscribed via link!")
-                                    results.append(
-                                        {
-                                            "email_id": email_id,
-                                            "success": True,
-                                            "message": "Unsubscribed via confirmation link",
-                                        }
-                                    )
-                                    unsubscribe_found = True
-                                    break
-
-                if not unsubscribe_found:
-                    results.append(
-                        {
-                            "email_id": email_id,
-                            "success": "partial",
-                            "message": "Visited page but couldn't auto-complete (may need manual action)",
-                            "url": unsubscribe_link,
-                        }
-                    )
+            if not unsub_done:
+                # --- Step 3: JS/login required ---
+                results.append(
+                    {
+                        "email_id": email_id,
+                        "success": "partial",
+                        "message": "Page may require login or JS to unsubscribe; manual or browser automation needed",
+                        "url": unsubscribe_link,
+                    }
+                )
 
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error processing email {email_id}: {e}")
+            print(traceback.format_exc())
             results.append({"email_id": email_id, "success": False, "error": str(e)})
 
     return {"results": results}
