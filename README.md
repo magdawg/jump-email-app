@@ -2,6 +2,9 @@ This is my code for the Jump coding project for an AI Smart Email Sorter.
 
 Deployed using Render at https://smartsort-0yhb.onrender.com/
 
+<img width="1277" height="811" alt="Screenshot 2025-11-02 at 16 49 10" src="https://github.com/user-attachments/assets/494afe10-4e82-4ee8-b0d2-920a628a2908" />
+
+
 -----------------------------------------------------------------------------
    Copyright (c) 2025 Magda Kowalska. All rights reserved.
  
@@ -19,5 +22,6 @@ Deployed using Render at https://smartsort-0yhb.onrender.com/
    Last Modified: 2025-11-02
    
 ------------------------------------------------------------------------------
+
 
 
