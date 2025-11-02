@@ -514,7 +514,11 @@ function App() {
               </button>
             </div>
             <p className="help-text">
-              Emails are automatically processed every 5 minutes. Click the button to process immediately.
+              Emails are automatically processed every 5 minutes (max 10 emails at once).
+              <br />
+              Click the button to process immediately.
+              <br />
+              Refresh the page if categories don't update automatically.
             </p>
           </section>
         </div>
