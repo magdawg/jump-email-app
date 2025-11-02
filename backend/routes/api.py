@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 
 from backend.db.database import get_db
 from backend.db.models import Category, Email, GmailAccount, User
-from backend.utils.gmail_utils import find_unsubscribe_link, get_gmail_service
+from backend.utils.gmail_utils import (
+    find_unsubscribe_link,
+    get_gmail_service,
+    extract_email_html,
+)
 
 from .schema import CategoryCreate
 
@@ -127,9 +131,13 @@ def unsubscribe_emails(email_ids: list[int], db: Session = Depends(get_db)):
                 .get(userId="me", id=email.gmail_message_id, format="full")
                 .execute()
             )
-
             headers = message["payload"].get("headers", [])
-            unsubscribe_link = find_unsubscribe_link(email.body, headers)
+
+            html_content = extract_email_html(message)
+
+            content_to_search = html_content if html_content else email.body
+
+            unsubscribe_link = find_unsubscribe_link(content_to_search, headers)
 
             if unsubscribe_link:
                 if unsubscribe_link.startswith("mailto:"):
