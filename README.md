@@ -26,12 +26,14 @@ Features:
 - Gmail login via OAuth
 - Adding new categories
 - Anthropic Claude API is used for processing and assinging new emails to categories
+- Emails that don't fit any existing category are put in Uncategorized
 - Smart unsubscribe functionality that uses BeautifulSoup (check console for the results of unsubscribe processing)
 - New emails from Gmail (only unread and in inbox) are processed in batches of 10 at once
 
 Preview:
 
 <img width="1277" height="811" alt="Screenshot 2025-11-02 at 16 49 10" src="https://github.com/user-attachments/assets/1fb695ca-3db2-421f-bb6f-cdf9a181078f" />
+
 
 
 
